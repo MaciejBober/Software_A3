@@ -61,11 +61,10 @@ def compute_objectives_from_time_series(time_series: List[Dict[str, Any]]) -> Di
     crash_count = 0
     min_distance = float('inf')
     
-    # Check if any crash occurred in the time series
-    for frame in time_series:
-        if frame.get("crashed", False):
-            crash_count = 1
-            break
+    for item in time_series: 
+        if item['crashed'] == True: 
+            crash_count += 1 
+            break 
     
     # Compute minimum distance between ego and other vehicles
     for frame in time_series:
@@ -87,9 +86,19 @@ def compute_objectives_from_time_series(time_series: List[Dict[str, Any]]) -> Di
                 continue
             
             # Euclidean distance between centers
-            dx = ego_pos[0] - other_pos[0]
-            dy = ego_pos[1] - other_pos[1]
-            distance = np.sqrt(dx**2 + dy**2)
+            dx = abs(ego_pos[0] - other_pos[0])
+            dy = abs(ego_pos[1] - other_pos[1])
+
+            L = (ego["length"] / 2) + (other["length"] / 2)
+            W = (ego["width"] / 2) + (other["width"] / 2)
+
+            dx -= L
+            dy -= W
+
+            # dx = max(0, dx) 
+            # dy = max(0, dy) 
+
+            distance = max(dx, dy)
             
             min_distance = min(min_distance, distance)
     
@@ -116,12 +125,12 @@ def compute_fitness(objectives: Dict[str, Any]) -> float:
 
     You can design a more refined scalarization if desired.
     """
-    crash_count = objectives.get("crash_count", 0)
+    crash_count = objectives.get("crash_count", 1000.0)
     min_distance = objectives.get("min_distance", 1000.0)
     
     # Crashes are always better (lower fitness) than non-crashes
-    if crash_count == 1:
-        return -1.0  # Best possible fitness
+    if crash_count >= 1:
+        return -100.0  # Best possible fitness
     else:
         # For non-crashes, minimize distance (smaller distance = better fitness)
         return min_distance
@@ -169,9 +178,12 @@ def mutate_config(
         current_val = mutated.get(param_to_mutate, spec["min"])
         range_size = spec["max"] - spec["min"]
         # Use a step size proportional to the range (e.g., 10% of range)
-        step_size = max(1, int(range_size * 0.1))
-        delta = rng.integers(-step_size, step_size + 1)
+        step_size = max(1, int(round(range_size * 0.5)))
+        delta = rng.uniform(-step_size, step_size)
         new_val = int(np.clip(current_val + delta, spec["min"], spec["max"]))
+
+        # print(f"After mutation {new_val}, delta = {delta} for the range_size = {range_size}")
+
         mutated[param_to_mutate] = new_val
         
         # If we mutated lanes_count, ensure initial_lane_id is valid
@@ -184,9 +196,12 @@ def mutate_config(
         current_val = mutated.get(param_to_mutate, spec["min"])
         range_size = spec["max"] - spec["min"]
         # Use standard deviation as 10% of range
-        std_dev = range_size * 0.1
-        delta = rng.normal(0, std_dev)
+        std_dev = range_size * 1.0
+        delta = rng.uniform(-range_size, range_size)
         new_val = float(np.clip(current_val + delta, spec["min"], spec["max"]))
+
+        # print(f"After mutation {new_val}, delta = {delta} for the range_size = {range_size}")
+
         mutated[param_to_mutate] = new_val
     
     # Special handling for initial_lane_id to ensure it's always valid
@@ -262,6 +277,10 @@ def hill_climb(
     # Evaluate initial solution (seed_base used for reproducibility)
     seed_base = int(rng.integers(1e9))
     crashed, ts = run_episode(env_id, current_cfg, policy, defaults, seed_base)
+
+    if crashed: 
+        print("crashed but not reported")
+
     obj = compute_objectives_from_time_series(ts)
     cur_fit = compute_fitness(obj)
 
@@ -273,11 +292,12 @@ def hill_climb(
 
     history = [best_fit]
     evaluations = 1
+    reset_count = 0 
 
     # Hill climbing main loop
     for iteration in range(iterations):
         # Early stopping if we found a crash
-        if best_obj.get("crash_count", 0) == 1:
+        if best_obj.get("crash_count", 0) >= 1:
             print(f"💥 Crash found at iteration {iteration}! Stopping early.")
             break
         
@@ -291,7 +311,11 @@ def hill_climb(
             n_crashed, n_ts = run_episode(env_id, neighbor_cfg, policy, defaults, neighbor_seed)
             n_obj = compute_objectives_from_time_series(n_ts)
             n_fit = compute_fitness(n_obj)
+            print(f"n_fit = {n_fit}, n_obj = {n_obj}")
             evaluations += 1
+
+            if n_crashed: 
+                print("neighbour crashed") 
             
             neighbors.append({
                 "cfg": neighbor_cfg,
@@ -308,6 +332,7 @@ def hill_climb(
         if best_neighbor["fit"] < cur_fit:
             current_cfg = best_neighbor["cfg"]
             cur_fit = best_neighbor["fit"]
+            reset_count = 0 
             
             # Update global best if this is the best so far
             if cur_fit < best_fit:
@@ -317,6 +342,14 @@ def hill_climb(
                 best_seed_base = best_neighbor["seed"]
                 best_ts = best_neighbor["ts"]
                 print(f"Iteration {iteration}: New best fitness = {best_fit:.4f}")
+
+        else: 
+            reset_count += 1 
+            # reset (set the cur_fit to inf, so that the next neighbour is the best)
+            if reset_count == 5:
+                cur_fit = 1000
+                reset_count = 0 
+
         
         history.append(best_fit)
     
