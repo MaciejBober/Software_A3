@@ -23,18 +23,18 @@ def main():
         print('='*70)
         
         # # Random Search
-        # print("  Random Search...")
+        # print("Random Search Experiment Running")
         # rs = RandomSearch(env_id, base_cfg, param_spec, policy, defaults)
         # rs_crashes = rs.run_search(n_scenarios=MAX_EVALS, seed=seed)
         # results['random_search'].append(len(rs_crashes))
-        # print(f"    Crashes: {len(rs_crashes)}")
+        # print(f"Crashes: {len(rs_crashes)}")
         
         # Hill Climbing
-        print("  Hill Climbing...")
+        print("Hill Climbing Experiment Running")
         hc = hill_climb(env_id, base_cfg, param_spec, policy, defaults)
         hc_crashes = hc.run_search(n_scenarios=MAX_EVALS, seed=seed)
         results['hill_climbing'].append(len(hc_crashes))
-        print(f"    Crashes: {len(hc_crashes)}")
+        print(f"Crashes: {len(hc_crashes)}")
     
     # Summary
     print(f"\n{'='*70}")

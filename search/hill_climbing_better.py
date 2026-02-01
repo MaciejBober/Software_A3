@@ -59,14 +59,14 @@ def compute_objectives_from_time_series(time_series: List[Dict[str, Any]]) -> Di
     but keep the keys above at least.
     """
     crashed = any(f.get("crashed", False) for f in time_series)
-    min_dist = float('inf')
+    min_dist = float("inf")
 
     for frame in time_series:
-        ego = frame.get("ego", None)
+        ego = frame.get("ego")
         others = frame.get("others", [])
         if ego is None:
             continue
-        
+
         ex, ey = ego["pos"]
         e_hl = ego["length"] / 2
         e_hw = ego["width"] / 2
@@ -76,20 +76,21 @@ def compute_objectives_from_time_series(time_series: List[Dict[str, Any]]) -> Di
             o_hl = other["length"] / 2
             o_hw = other["width"] / 2
 
-            # axis-aligned rectangle distance
             dx = abs(ex - ox) - (e_hl + o_hl)
             dy = abs(ey - oy) - (e_hw + o_hw)
+            
+            if dx < 0 and dy < 0:
+                dist = -np.sqrt(abs(dx * dx + dy * dy))  
+            else:
+                dx = max(dx, 0.0)
+                dy = max(dy, 0.0)
+                dist = np.sqrt(dx * dx + dy * dy)
 
-            # overlap means zero distance
-            dx = max(dx, 0.0)
-            dy = max(dy, 0.0)
-
-            dist = np.sqrt(dx * dx + dy * dy)
             min_dist = min(min_dist, dist)
 
     return {
-      "crash_count": int(crashed),
-      "min_distance": min_dist if min_dist != float('inf') else 100.0
+        "crash_count": int(crashed),
+        "min_distance": min_dist if min_dist != float("inf") else 100.0
     }
 
 
@@ -140,8 +141,6 @@ def mutate_config(
       - adaptive step sizes, etc.
     """
     mutated = copy.deepcopy(cfg)
-
-    # Choose 1-2 parameters to mutate
     num_params = rng.choice([1, 2])
     param_names = list(param_spec.keys())
     chosen_params = rng.choice(param_names, size=num_params, replace=False)
@@ -156,15 +155,18 @@ def mutate_config(
         
         # If parameter doesn't exist, initialize it to middle of range
         if current_val is None:
+            print("MMMMM")
             if param_type == "int":
                 current_val = (min_val + max_val) // 2
+                print("MMMMM2")
             else:
                 current_val = (min_val + max_val) / 2.0
+                print("MMMMM3")
             mutated[param_name] = current_val
         
-        # Mutate with ~15% step size
+        # Mutate with 20% step size
         range_size = max_val - min_val
-        step = 0.15 * range_size
+        step = 0.20 * range_size
         noise = rng.uniform(-step, step)
         
         if param_type == "int":
@@ -173,10 +175,8 @@ def mutate_config(
         else:
             new_val = current_val + noise
             new_val = max(min_val, min(max_val, new_val))
-        
         mutated[param_name] = new_val
     
-    # Ensure initial_lane_id is valid if lanes_count was mutated
     if "lanes_count" in mutated:
         lanes = mutated["lanes_count"]
         if "initial_lane_id" in mutated:
@@ -229,8 +229,6 @@ def hill_climb(
         - "evaluations": int
     """
     rng = np.random.default_rng(seed)
-    
-    # Start from base configuration and add search parameters
     current_cfg = dict(base_cfg)
     
     # Initialize search parameters to middle of range
@@ -248,7 +246,6 @@ def hill_climb(
     obj = compute_objectives_from_time_series(ts)
     current_fitness = compute_fitness(obj)
     
-    # Track best solution found
     best_cfg = copy.deepcopy(current_cfg)
     best_obj = dict(obj)
     best_fitness = current_fitness
@@ -261,7 +258,6 @@ def hill_climb(
     print(f"Iteration 0: fitness={best_fitness:.4f}, min_distance={best_obj['min_distance']:.4f}, crashed={best_obj['crash_count']}")
     
     for iteration in range(iterations):
-        # Generate and evaluate neighbors
         best_neighbor = None
         best_neighbor_fitness = float('inf')
         
@@ -273,16 +269,18 @@ def hill_climb(
             neighbor_fitness = compute_fitness(neighbor_obj)
             evaluations += 1
             
-            # Track best neighbor
-            if neighbor_fitness < best_neighbor_fitness:
+            if neighbor_fitness < best_neighbor_fitness or \
+               (neighbor_fitness == best_neighbor_fitness and best_neighbor_fitness <= 0.01):
                 best_neighbor = (neighbor_cfg, neighbor_obj, neighbor_fitness, neighbor_seed)
                 best_neighbor_fitness = neighbor_fitness
         
-        # Greedy acceptance: move to neighbor if better
-        if best_neighbor_fitness < current_fitness:
+        accept = best_neighbor_fitness < current_fitness
+        if best_neighbor_fitness == current_fitness and current_fitness <= 0.01:
+            accept = rng.random() < 0.3  
+        
+        if accept:
             current_cfg, obj, current_fitness, seed_base = best_neighbor
             
-            # Update global best if improved
             if current_fitness < best_fitness:
                 best_cfg = copy.deepcopy(current_cfg)
                 best_obj = dict(obj)
@@ -295,17 +293,14 @@ def hill_climb(
             no_improvement += 1
         
         history.append(best_fitness)
-        
-        # Print progress
         print(f"Iteration {iteration+1}: fitness={best_fitness:.4f}, min_distance={best_obj['min_distance']:.4f}, crashed={best_obj['crash_count']}")
         
-        # Early stopping if crash found
         if best_obj["crash_count"] > 0:
             break
         
-        # Restart if stuck for too long
-        if no_improvement > 5:
-            print(f"Restarting")
+        restart_threshold = 3 if best_fitness <= 0.01 else 5
+        if no_improvement > restart_threshold:
+            print("Restarting")
             # Generate random aggressive config
             for param_name, spec in param_spec.items():
                 param_type = spec["type"]
@@ -323,12 +318,16 @@ def hill_climb(
             evaluations += 1
             no_improvement = 0
     
-    return {
-        "best_cfg": best_cfg,
-        "best_objectives": best_obj,
-        "best_fitness": best_fitness,
-        "best_seed_base": best_seed_base,
+    neighbor_obj = compute_objectives_from_time_series(ts)
+
+    if neighbor_obj["crash_count"] > 0:
+      return {
+        "best_cfg": neighbor_cfg,
+        "best_objectives": neighbor_obj,
+        "best_fitness": -1.0,
+        "best_seed_base": neighbor_seed,
         "history": history,
-        "evaluations": evaluations
+        "evaluations": evaluations,
+        "best_time_series": ts
     }
 
