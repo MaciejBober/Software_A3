@@ -62,9 +62,15 @@ def compute_objectives_from_time_series(time_series: List[Dict[str, Any]]) -> Di
     min_distance = float('inf')
     
     for item in time_series: 
-        if item['crashed'] == True: 
+        if item.get("crashed", False) == True: 
             crash_count += 1 
-            break 
+            min_distance = 0 
+            print("mamy kolizje")
+            return {
+                "crash_count": crash_count,
+                "min_distance": min_distance
+            }
+
     
     # Compute minimum distance between ego and other vehicles
     for frame in time_series:
@@ -125,7 +131,7 @@ def compute_fitness(objectives: Dict[str, Any]) -> float:
 
     You can design a more refined scalarization if desired.
     """
-    crash_count = objectives.get("crash_count", 1000.0)
+    crash_count = objectives.get("crash_count", 0.0)
     min_distance = objectives.get("min_distance", 1000.0)
     
     # Crashes are always better (lower fitness) than non-crashes
@@ -298,7 +304,7 @@ def hill_climb(
     for iteration in range(iterations):
         # Early stopping if we found a crash
         if best_obj.get("crash_count", 0) >= 1:
-            print(f"💥 Crash found at iteration {iteration}! Stopping early.")
+            print(f"💥 Crash found at iteration {iteration}!")
             break
         
         # Generate and evaluate neighbors
@@ -309,13 +315,14 @@ def hill_climb(
             
             # Evaluate neighbor
             n_crashed, n_ts = run_episode(env_id, neighbor_cfg, policy, defaults, neighbor_seed)
+            if n_crashed: 
+                n_ts.append({"crashed": True})
+                print("neighbour crashed") 
             n_obj = compute_objectives_from_time_series(n_ts)
             n_fit = compute_fitness(n_obj)
             print(f"n_fit = {n_fit}, n_obj = {n_obj}")
             evaluations += 1
 
-            if n_crashed: 
-                print("neighbour crashed") 
             
             neighbors.append({
                 "cfg": neighbor_cfg,
