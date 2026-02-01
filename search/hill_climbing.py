@@ -65,7 +65,7 @@ def compute_objectives_from_time_series(time_series: List[Dict[str, Any]]) -> Di
         if item.get("crashed", False) == True: 
             crash_count += 1 
             min_distance = 0 
-            print("mamy kolizje")
+            # print("mamy kolizje")
             return {
                 "crash_count": crash_count,
                 "min_distance": min_distance
@@ -136,7 +136,7 @@ def compute_fitness(objectives: Dict[str, Any]) -> float:
     
     # Crashes are always better (lower fitness) than non-crashes
     if crash_count >= 1:
-        return -100.0  # Best possible fitness
+        return -1.0  # Best possible fitness
     else:
         # For non-crashes, minimize distance (smaller distance = better fitness)
         return min_distance
@@ -184,7 +184,7 @@ def mutate_config(
         current_val = mutated.get(param_to_mutate, spec["min"])
         range_size = spec["max"] - spec["min"]
         # Use a step size proportional to the range (e.g., 10% of range)
-        step_size = max(1, int(round(range_size * 0.5)))
+        step_size = range_size
         delta = rng.uniform(-step_size, step_size)
         new_val = int(np.clip(current_val + delta, spec["min"], spec["max"]))
 
@@ -202,8 +202,8 @@ def mutate_config(
         current_val = mutated.get(param_to_mutate, spec["min"])
         range_size = spec["max"] - spec["min"]
         # Use standard deviation as 10% of range
-        std_dev = range_size * 1.0
-        delta = rng.uniform(-range_size, range_size)
+        std_dev = range_size * 0.3
+        delta = rng.uniform(-std_dev, std_dev)
         new_val = float(np.clip(current_val + delta, spec["min"], spec["max"]))
 
         # print(f"After mutation {new_val}, delta = {delta} for the range_size = {range_size}")
@@ -311,16 +311,21 @@ def hill_climb(
         neighbors = []
         for _ in range(neighbors_per_iter):
             neighbor_cfg = mutate_config(current_cfg, param_spec, rng)
+
+            # mutate the current one few times 
+            for tt in range(5):
+                neighbor_cfg = mutate_config(neighbor_cfg, param_spec, rng) 
+
             neighbor_seed = int(rng.integers(1e9))
             
             # Evaluate neighbor
             n_crashed, n_ts = run_episode(env_id, neighbor_cfg, policy, defaults, neighbor_seed)
             if n_crashed: 
                 n_ts.append({"crashed": True})
-                print("neighbour crashed") 
+                # print("neighbour crashed") 
             n_obj = compute_objectives_from_time_series(n_ts)
             n_fit = compute_fitness(n_obj)
-            print(f"n_fit = {n_fit}, n_obj = {n_obj}")
+            # print(f"n_fit = {n_fit}, n_obj = {n_obj}")
             evaluations += 1
 
             
