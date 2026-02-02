@@ -101,8 +101,8 @@ def compute_objectives_from_time_series(time_series: List[Dict[str, Any]]) -> Di
             dx -= L
             dy -= W
 
-            # dx = max(0, dx) 
-            # dy = max(0, dy) 
+            dx = max(0, dx) 
+            dy = max(0, dy) 
 
             distance = max(dx, dy)
             
@@ -174,6 +174,8 @@ def mutate_config(
     
     # Get list of parameters that can be mutated
     mutable_params = list(param_spec.keys())
+
+    # print(mutable_params)
     
     # Randomly select one parameter to mutate (single-parameter mutation)
     param_to_mutate = rng.choice(mutable_params)
@@ -184,7 +186,7 @@ def mutate_config(
         current_val = mutated.get(param_to_mutate, spec["min"])
         range_size = spec["max"] - spec["min"]
         # Use a step size proportional to the range (e.g., 10% of range)
-        step_size = range_size
+        step_size = max(2, range_size // 7)
         delta = rng.uniform(-step_size, step_size)
         new_val = int(np.clip(current_val + delta, spec["min"], spec["max"]))
 
@@ -202,7 +204,7 @@ def mutate_config(
         current_val = mutated.get(param_to_mutate, spec["min"])
         range_size = spec["max"] - spec["min"]
         # Use standard deviation as 10% of range
-        std_dev = range_size * 0.3
+        std_dev = range_size * 0.1
         delta = rng.uniform(-std_dev, std_dev)
         new_val = float(np.clip(current_val + delta, spec["min"], spec["max"]))
 
@@ -313,7 +315,7 @@ def hill_climb(
             neighbor_cfg = mutate_config(current_cfg, param_spec, rng)
 
             # mutate the current one few times 
-            for tt in range(5):
+            for tt in range(2):
                 neighbor_cfg = mutate_config(neighbor_cfg, param_spec, rng) 
 
             neighbor_seed = int(rng.integers(1e9))

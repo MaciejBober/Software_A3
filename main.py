@@ -12,7 +12,7 @@ def main():
     # search = RandomSearch(env_id, base_cfg, param_spec, policy, defaults)
     # crashes = search.run_search(n_scenarios=50, seed=11)
     search = HillClimbing(env_id, base_cfg, param_spec, policy, defaults)
-    crashes = search.run_search(seed=123213, neighbors_per_iter=4)
+    crashes = search.run_search(seed=42, neighbors_per_iter=5)
 
     print(f"✅ Found {len(crashes)} crashes.")
     #if crashes:
