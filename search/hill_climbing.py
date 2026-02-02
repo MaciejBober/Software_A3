@@ -96,6 +96,9 @@ def compute_objectives_from_time_series(time_series: List[Dict[str, Any]]) -> Di
             dx -= L
             dy -= W
 
+            dx = max(0, dx) 
+            dy = max(0, dy) 
+
             distance = max(dx, dy)
             min_distance = min(min_distance, distance)
     
@@ -161,6 +164,8 @@ def mutate_config(
     """
     mutated = copy.deepcopy(cfg)
     mutable_params = list(param_spec.keys())
+
+    # print(mutable_params)
     
     param_to_mutate = rng.choice(mutable_params)
     spec = param_spec[param_to_mutate]
@@ -168,7 +173,8 @@ def mutate_config(
     if spec["type"] == "int":
         current_val = mutated.get(param_to_mutate, spec["min"])
         range_size = spec["max"] - spec["min"]
-        step_size = range_size
+        # Use a step size proportional to the range (e.g., 10% of range)
+        step_size = max(2, range_size // 7)
         delta = rng.uniform(-step_size, step_size)
         new_val = int(np.clip(current_val + delta, spec["min"], spec["max"]))
 
@@ -180,7 +186,8 @@ def mutate_config(
     elif spec["type"] == "float":
         current_val = mutated.get(param_to_mutate, spec["min"])
         range_size = spec["max"] - spec["min"]
-        std_dev = range_size * 0.3
+        # Use standard deviation as 10% of range
+        std_dev = range_size * 0.1
         delta = rng.uniform(-std_dev, std_dev)
         new_val = float(np.clip(current_val + delta, spec["min"], spec["max"]))
         mutated[param_to_mutate] = new_val
@@ -279,7 +286,8 @@ def hill_climb(
         for _ in range(neighbors_per_iter):
             neighbor_cfg = mutate_config(current_cfg, param_spec, rng)
 
-            for tt in range(5):
+            # mutate the current one few times 
+            for tt in range(2):
                 neighbor_cfg = mutate_config(neighbor_cfg, param_spec, rng) 
 
             neighbor_seed = int(rng.integers(1e9))
