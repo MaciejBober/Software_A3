@@ -415,4 +415,7 @@ class HillClimbing:
                     out_dir="videos"
                 )
         
-        return crash_log
+        return {
+            'crashes': crash_log,
+            'evaluations': result['evaluations']
+        }

@@ -1,8 +1,8 @@
 from config.search_space import param_spec, base_cfg
 from policies.pretrained_policy import load_pretrained_policy
-from envs.highway_env_utils import make_env
+from envs.highway_env_utils import make_env, run_episode, record_video_episode
 from search.random_search import RandomSearch
-from search.hill_climbing import hill_climb
+from search.hill_climbing import HillClimbing
 import numpy as np
 import matplotlib.pyplot as plt
 import os
@@ -36,24 +36,58 @@ def main():
         print("Random Search Experiment")
         start_time = time()
         rs = RandomSearch(env_id, base_cfg, param_spec, policy, defaults)
-        rs_result = rs.run_search(n_scenarios=MAX_EVALS, seed=seed)
+        
+        # Inline Random Search implementation to support early stopping
+        rs_rng = np.random.default_rng(seed)
+        rs_crash_log = []
+        rs_evals_count = 0
+        
+        print(f"Running Random Search for {MAX_EVALS} scenarios...")
+        for i in range(MAX_EVALS):
+            cfg = rs.sample_random_config(rs_rng)
+            episode_seed = int(rs_rng.integers(1e9))
+            
+            crashed, ts = run_episode(env_id, cfg, policy, defaults, episode_seed)
+            rs_evals_count += 1
+            
+            if crashed:
+                print(f"💥 Collision: scenario {i}, seed={episode_seed}")
+                rs_crash_log.append({"cfg": cfg, "seed": episode_seed})
+                record_video_episode(env_id, cfg, policy, defaults, episode_seed, out_dir="videos")
+                break # Early stopping!
+            # else:
+            #     print(f"No Crash: scenario {i}, seed={episode_seed}")
+
         rs_runtime = time() - start_time
-        rs_crashes = rs_result if isinstance(rs_result, list) else rs_result.get('crashes', [])
+        rs_crashes = rs_crash_log
+        
         results['random_search'].append(len(rs_crashes))
         results['rs_runtimes'].append(rs_runtime)
-        results['rs_evals_to_crash'].append(len(rs_crashes) if rs_crashes else MAX_EVALS)
-        print(f"Crashes: {len(rs_crashes)}, Runtime: {rs_runtime:.2f}s")
+        # Use actual evaluations count
+        results['rs_evals_to_crash'].append(rs_evals_count)
+        print(f"Crashes: {len(rs_crashes)}, Runtime: {rs_runtime:.2f}s, Evals: {rs_evals_count}")
         
         print("Hill Climbing Experiment")
         start_time = time()
-        hc = hill_climb(env_id, base_cfg, param_spec, policy, defaults)
-        hc_result = hc.run_search(n_scenarios=MAX_EVALS, seed=seed)
+        hc = HillClimbing(env_id, base_cfg, param_spec, policy, defaults)
+        hc_result = hc.run_search(iterations=MAX_EVALS, seed=seed)
         hc_runtime = time() - start_time
-        hc_crashes = hc_result if isinstance(hc_result, list) else hc_result.get('crashes', [])
+        
+        hc_crashes = []
+        hc_evals = MAX_EVALS
+        
+        if isinstance(hc_result, list):
+            hc_crashes = hc_result
+             # Fallback if evaluations missing (shouldn't happen with updated code)
+            hc_evals = len(hc_crashes) if hc_crashes else MAX_EVALS
+        elif isinstance(hc_result, dict):
+            hc_crashes = hc_result.get('crashes', [])
+            hc_evals = hc_result.get('evaluations', MAX_EVALS)
+
         results['hill_climbing'].append(len(hc_crashes))
         results['hc_runtimes'].append(hc_runtime)
-        results['hc_evals_to_crash'].append(len(hc_crashes) if hc_crashes else MAX_EVALS)
-        print(f"Crashes: {len(hc_crashes)}, Runtime: {hc_runtime:.2f}s")
+        results['hc_evals_to_crash'].append(hc_evals)
+        print(f"Crashes: {len(hc_crashes)}, Runtime: {hc_runtime:.2f}s, Evals: {hc_evals}")
     
     print(f"Configuration: Seeds: {N_SEEDS}, Max Evaluations: {MAX_EVALS}")
     
