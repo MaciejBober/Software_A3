@@ -65,19 +65,16 @@ def compute_objectives_from_time_series(time_series: List[Dict[str, Any]]) -> Di
         if item.get("crashed", False) == True: 
             crash_count += 1 
             min_distance = 0 
-            # print("mamy kolizje")
             return {
                 "crash_count": crash_count,
                 "min_distance": min_distance
             }
 
     
-    # Compute minimum distance between ego and other vehicles
     for frame in time_series:
         ego = frame.get("ego")
         others = frame.get("others", [])
         
-        # Skip if no ego vehicle or no other vehicles
         if ego is None or not others:
             continue
         
@@ -85,13 +82,11 @@ def compute_objectives_from_time_series(time_series: List[Dict[str, Any]]) -> Di
         if ego_pos is None:
             continue
         
-        # Calculate distance to each other vehicle
         for other in others:
             other_pos = other.get("pos")
             if other_pos is None:
                 continue
             
-            # Euclidean distance between centers
             dx = abs(ego_pos[0] - other_pos[0])
             dy = abs(ego_pos[1] - other_pos[1])
 
@@ -101,14 +96,9 @@ def compute_objectives_from_time_series(time_series: List[Dict[str, Any]]) -> Di
             dx -= L
             dy -= W
 
-            # dx = max(0, dx) 
-            # dy = max(0, dy) 
-
             distance = max(dx, dy)
-            
             min_distance = min(min_distance, distance)
     
-    # If no valid distances were computed, set to a large value
     if min_distance == float('inf'):
         min_distance = 1000.0
     
@@ -169,48 +159,32 @@ def mutate_config(
       - multiple-parameter mutation
       - adaptive step sizes, etc.
     """
-    # Create a deep copy to avoid modifying the original
     mutated = copy.deepcopy(cfg)
-    
-    # Get list of parameters that can be mutated
     mutable_params = list(param_spec.keys())
     
-    # Randomly select one parameter to mutate (single-parameter mutation)
     param_to_mutate = rng.choice(mutable_params)
     spec = param_spec[param_to_mutate]
     
     if spec["type"] == "int":
-        # For integers, add a small random perturbation
         current_val = mutated.get(param_to_mutate, spec["min"])
         range_size = spec["max"] - spec["min"]
-        # Use a step size proportional to the range (e.g., 10% of range)
         step_size = range_size
         delta = rng.uniform(-step_size, step_size)
         new_val = int(np.clip(current_val + delta, spec["min"], spec["max"]))
 
-        # print(f"After mutation {new_val}, delta = {delta} for the range_size = {range_size}")
-
         mutated[param_to_mutate] = new_val
-        
-        # If we mutated lanes_count, ensure initial_lane_id is valid
         if param_to_mutate == "lanes_count":
             current_lane = mutated.get("initial_lane_id", 0)
             mutated["initial_lane_id"] = int(np.clip(current_lane, 0, new_val - 1))
     
     elif spec["type"] == "float":
-        # For floats, add Gaussian noise proportional to the range
         current_val = mutated.get(param_to_mutate, spec["min"])
         range_size = spec["max"] - spec["min"]
-        # Use standard deviation as 10% of range
         std_dev = range_size * 0.3
         delta = rng.uniform(-std_dev, std_dev)
         new_val = float(np.clip(current_val + delta, spec["min"], spec["max"]))
-
-        # print(f"After mutation {new_val}, delta = {delta} for the range_size = {range_size}")
-
         mutated[param_to_mutate] = new_val
     
-    # Special handling for initial_lane_id to ensure it's always valid
     if param_to_mutate == "initial_lane_id":
         lanes = mutated.get("lanes_count", 3)
         mutated["initial_lane_id"] = int(np.clip(mutated["initial_lane_id"], 0, lanes - 1))
@@ -262,25 +236,19 @@ def hill_climb(
         - "evaluations": int
     """
     rng = np.random.default_rng(seed)
-
-    # Initialize with base configuration
     current_cfg = dict(base_cfg)
     
-    # Add search parameters from param_spec if not in base_cfg
     for param, spec in param_spec.items():
         if param not in current_cfg:
-            # Initialize to middle of range
             if spec["type"] == "int":
                 current_cfg[param] = (spec["min"] + spec["max"]) // 2
             else:
                 current_cfg[param] = (spec["min"] + spec["max"]) / 2.0
     
-    # Ensure initial_lane_id is valid
     lanes = current_cfg.get("lanes_count", 3)
     if "initial_lane_id" in current_cfg:
         current_cfg["initial_lane_id"] = min(current_cfg["initial_lane_id"], lanes - 1)
 
-    # Evaluate initial solution (seed_base used for reproducibility)
     seed_base = int(rng.integers(1e9))
     crashed, ts = run_episode(env_id, current_cfg, policy, defaults, seed_base)
 
@@ -304,21 +272,18 @@ def hill_climb(
     for iteration in range(iterations):
         # Early stopping if we found a crash
         if best_obj.get("crash_count", 0) >= 1:
-            print(f"💥 Crash found at iteration {iteration}!")
+            print(f"Crash found at iteration {iteration}!")
             break
         
-        # Generate and evaluate neighbors
         neighbors = []
         for _ in range(neighbors_per_iter):
             neighbor_cfg = mutate_config(current_cfg, param_spec, rng)
 
-            # mutate the current one few times 
             for tt in range(5):
                 neighbor_cfg = mutate_config(neighbor_cfg, param_spec, rng) 
 
             neighbor_seed = int(rng.integers(1e9))
-            
-            # Evaluate neighbor
+
             n_crashed, n_ts = run_episode(env_id, neighbor_cfg, policy, defaults, neighbor_seed)
             if n_crashed: 
                 n_ts.append({"crashed": True})
@@ -328,7 +293,6 @@ def hill_climb(
             # print(f"n_fit = {n_fit}, n_obj = {n_obj}")
             evaluations += 1
 
-            
             neighbors.append({
                 "cfg": neighbor_cfg,
                 "obj": n_obj,
@@ -337,16 +301,13 @@ def hill_climb(
                 "ts": n_ts
             })
         
-        # Find the best neighbor
         best_neighbor = min(neighbors, key=lambda x: x["fit"])
         
-        # Accept if better (greedy hill climbing)
         if best_neighbor["fit"] < cur_fit:
             current_cfg = best_neighbor["cfg"]
             cur_fit = best_neighbor["fit"]
             reset_count = 0 
             
-            # Update global best if this is the best so far
             if cur_fit < best_fit:
                 best_cfg = copy.deepcopy(current_cfg)
                 best_obj = dict(best_neighbor["obj"])
@@ -357,7 +318,6 @@ def hill_climb(
 
         else: 
             reset_count += 1 
-            # reset (set the cur_fit to inf, so that the next neighbour is the best)
             if reset_count == 5:
                 cur_fit = 1000
                 reset_count = 0 
@@ -365,7 +325,6 @@ def hill_climb(
         
         history.append(best_fit)
     
-    # Return complete result
     return {
         "best_cfg": best_cfg,
         "best_objectives": best_obj,
@@ -419,7 +378,6 @@ class HillClimbing:
             neighbors_per_iter=neighbors_per_iter
         )
         
-        # Print results
         print(f"\n{'='*60}")
         print(f"Hill Climbing Results:")
         print(f"{'='*60}")
@@ -430,10 +388,9 @@ class HillClimbing:
         print(f"Best configuration: {result['best_cfg']}")
         print(f"{'='*60}\n")
         
-        # Record video if a crash was found
         crash_log = []
         if result['best_objectives']['crash_count'] == 1:
-            print(f"💥 Collision found! Recording video...")
+            print(f"Collision found! Recording video...")
             crash_log.append({
                 "cfg": result['best_cfg'],
                 "seed": result['best_seed_base']

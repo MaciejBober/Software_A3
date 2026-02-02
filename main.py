@@ -9,10 +9,8 @@ def main():
     policy = load_pretrained_policy("agents/model")
     env, defaults = make_env(env_id)
 
-    # search = RandomSearch(env_id, base_cfg, param_spec, policy, defaults)
-    # crashes = search.run_search(n_scenarios=50, seed=11)
-    search = HillClimbing(env_id, base_cfg, param_spec, policy, defaults)
-    crashes = search.run_search(seed=123213, neighbors_per_iter=4)
+    search = RandomSearch(env_id, base_cfg, param_spec, policy, defaults)
+    crashes = search.run_search(n_scenarios=50, seed=11)
 
     print(f"✅ Found {len(crashes)} crashes.")
     #if crashes:
