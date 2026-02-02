@@ -121,9 +121,18 @@ def main():
 
     print(f"\nScalability:")
     print(f"Max evaluations used: {MAX_EVALS}")
-    print(f"Random Search: Scales linearly with evaluations, O(n)")
-    print(f"Hill Climber: Scales with iterations and neighbors, O(i*n) where i=iterations, n=neighbors_per_iter")
-    
+
+    print(f"\Summary:")
+    print(f"{'Metric':<45} {'Random Search':>15} {'Hill Climbing':>15}")
+    print(f"{'Total Crashes Found':<45} {rs_total_crashes:>15} {hc_total_crashes:>15}")
+    print(f"{'Avg Crashes per Seed':<45} {rs_total_crashes/N_SEEDS:>15.2f} {hc_total_crashes/N_SEEDS:>15.2f}")
+    print(f"{'Avg Evaluations to Crash':<45} {rs_avg_evals:>15.1f} {hc_avg_evals:>15.1f}")
+    print(f"{'Std Dev Evaluations':<45} {np.std(results['rs_evals_to_crash']):>15.1f} {np.std(results['hc_evals_to_crash']):>15.1f}")
+    print(f"{'Avg Runtime (seconds)':<45} {rs_avg_runtime:>15.2f} {hc_avg_runtime:>15.2f}")
+    print(f"{'Total Runtime (seconds)':<45} {np.sum(results['rs_runtimes']):>15.2f} {np.sum(results['hc_runtimes']):>15.2f}")
+    print(f"{'Collision Found':<45} {str(rs_found_collision):>15} {str(hc_found_collision):>15}")
+    print(f"{'Efficiency Ratio (HC/RS)':<45} {'baseline':>15} {efficiency_ratio:>15.2f}x")
+
     methods = ["Random Search", "Hill Climbing"]
     avg_evals = [rs_avg_evals, hc_avg_evals]
     crash_counts = [rs_total_crashes, hc_total_crashes]
